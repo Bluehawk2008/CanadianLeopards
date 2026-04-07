@@ -1,10 +1,11 @@
-﻿using System.Collections;
+using System.Collections;
 using System.IO;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using MelonLoader;
 using GHPC;
 using GHPC.Camera;
+using GHPC.Player;
 using GHPC.Mission;
 using GHPC.AI.Platoons;
 using GHPC.State;
@@ -17,7 +18,7 @@ using GHPC.Effects.Voices;
 
 namespace CanadianLeopards
 {
-    public class AlreadyConverted : MonoBehaviour
+    public class CanLepConverted : MonoBehaviour
     {
         void Awake()
         {
@@ -32,11 +33,14 @@ namespace CanadianLeopards
         public static MelonPreferences_Entry<bool> no_threecolour;
         public static MelonPreferences_Entry<bool> decals_outlined;
         public static MelonPreferences_Entry<bool> additional_decals;
+        public static MelonPreferences_Entry<bool> showcase_extras;
         public static MelonPreferences_Entry<bool> mute_logger;
 
-        static GameObject american_crew_voice;
+        public static GameObject american_crew_voice = null;
+        public static GameObject m240_prefab = null;        
         static bool activeScene = false;
-        static Vehicle abrams = null;
+        static bool grafen = false;
+        
         public override void OnInitializeMelon()
         {
             MelonPreferences_Category cfg = MelonPreferences.CreateCategory("Canadian Leopards");
@@ -55,20 +59,54 @@ namespace CanadianLeopards
             additional_decals = cfg.CreateEntry<bool>("Additional decals", true);
             additional_decals.Comment = "Adds tactical unit symbol and MLC number to the hull.";
 
+            showcase_extras = cfg.CreateEntry<bool>("Add 1A3s to Showcase", true);
+            showcase_extras.Comment = "Adds 1A3-based Leopard C1s to the Grafenwoehr Showcase.";
+
             mute_logger = cfg.CreateEntry<bool>("Mute log messages", false);
             mute_logger.Comment = "Mutes log messages in the MelonLoader console.";
+        }
+
+        void ShowcaseExtras()
+        {
+            var prefabLookups = Object.FindAnyObjectByType<UnitSpawner>().PrefabLookup;
+            AssetReference prefab1A3 = prefabLookups.GetPrefab("LEO1A3");
+            AssetReference prefab1A3A3 = prefabLookups.GetPrefab("LEO1A3A3");
+            GameObject Leo1A3 = Addressables.LoadAssetAsync<GameObject>(prefab1A3).WaitForCompletion();
+            GameObject Leo1A3A3 = Addressables.LoadAssetAsync<GameObject>(prefab1A3A3).WaitForCompletion();
+            Leo1A3.GetComponent<Vehicle>().Allegiance = Faction.Neutral;
+            Leo1A3A3.GetComponent<Vehicle>().Allegiance = Faction.Neutral;
+            GameObject.Instantiate(Leo1A3, new Vector3(1423.7f, 26.416f, 1433.9f), Quaternion.Euler(0.573f, 233.87f, 358.75f));
+            GameObject.Instantiate(Leo1A3A3, new Vector3(1399.87f, 25.7f, 1436.75f), Quaternion.Euler(0.925f, 230.98f, 358.284f));                      
+            if (!mute_logger.Value) { MelonLogger.Msg("Spawned additional vehicles on the range."); }
+            grafen = true;            
+        }
+
+        public void NewQuad(GameObject go, Material mat, Texture2D tex)
+        {
+            MeshFilter filter = go.AddComponent<MeshFilter>();
+            MeshRenderer render = go.AddComponent<MeshRenderer>();
+            filter.mesh = new Mesh();
+            filter.mesh.vertices = new Vector3[] {
+                            new Vector3(1f, 0 , 1f), new Vector3(1f, 0, -1f), new Vector3(-1f, 0, 1f), new Vector3(-1f, 0, -1f) };
+            filter.mesh.uv = new Vector2[] {
+                            new Vector2(1, 1), new Vector2(1, 0), new Vector2(0, 1), new Vector2(0, 0) };
+            filter.mesh.triangles = new int[] { 0, 1, 2, 2, 1, 3 };
+            filter.mesh.RecalculateNormals();
+            render.material = mat;
+            render.material.mainTexture = tex;
         }
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             if (sceneName == "MainMenu2_Scene" || sceneName == "t64_menu" || sceneName == "MainMenu2-1_Scene") 
             {
                 activeScene = false;
-                abrams = null;
+                grafen = false;
                 return; 
-            }            
+            }
 
             gameManager = GameObject.Find("_APP_GHPC_");
-            if (gameManager == null) { return; }            
+            if (gameManager == null) { return; }
+            if (sceneName == "TR01_showcase" && showcase_extras.Value) { ShowcaseExtras(); }
 
             StateController.RunOrDefer(GameState.GameReady, new GameStateEventHandler(Conversion), GameStatePriority.Medium);
         }
@@ -77,28 +115,30 @@ namespace CanadianLeopards
         {
             if (activeScene == true) { yield break; }
             activeScene = true;
-            Vehicle[] list = GameObject.FindObjectsByType<Vehicle>(FindObjectsSortMode.None);            
+            Vehicle[] list = GameObject.FindObjectsByType<Vehicle>(FindObjectsSortMode.None);
             
-            foreach (var vehicle in list)
+            if (m240_prefab == null || american_crew_voice == null) 
             {
-                if (vehicle.UniqueName == "M1" && abrams == null)
+                Vehicle abrams = null;
+                foreach (var vehicle in list)
                 {
-                    abrams = vehicle;
+                    if (vehicle.UniqueName != "M1") { continue; }
+                    abrams = vehicle;                        
+                    m240_prefab = abrams.transform.Find("IPM1_rig/HULL/TURRET/Turret Scripts/M240_loader").gameObject;
                     if (!mute_logger.Value) { MelonLogger.Msg("Abrams found in scene"); }
-                }                
-            }
-
-            if (abrams == null)
-            {
-                var prefabLookups = UnityEngine.Object.FindAnyObjectByType<UnitSpawner>().PrefabLookup;
-                AssetReference prefab = prefabLookups.GetPrefab("M1");
-                var dummy_abrams = Addressables.LoadAssetAsync<GameObject>(prefab).WaitForCompletion();
-                GameObject new_abrams = GameObject.Instantiate(dummy_abrams, new Vector3(100f, 5f, 100f), new Quaternion(0f, 0f, 0f, 0f));
-                if (!mute_logger.Value) { MelonLogger.Msg("Dummy Abrams spawned"); }
-                new_abrams.GetComponent<Vehicle>().Allegiance = Faction.Neutral;
-                abrams = new_abrams.GetComponent<Vehicle>();
-                new_abrams.gameObject.SetActive(false);
-            }
+                    break;                  
+                }
+                
+                if (abrams == null)
+                {
+                    var prefabLookups = Object.FindAnyObjectByType<UnitSpawner>().PrefabLookup;
+                    AssetReference prefab = prefabLookups.GetPrefab("M1");
+                    abrams = Addressables.LoadAssetAsync<GameObject>(prefab).WaitForCompletion().GetComponent<Vehicle>();
+                    m240_prefab = abrams.transform.Find("Turret Scripts/M240_loader").gameObject;
+                    if (!mute_logger.Value) { MelonLogger.Msg("Dummy Abrams fetched"); }                
+                }               
+                american_crew_voice = abrams.GetComponentInChildren<CrewVoiceHandler>().gameObject;                
+            } 
 
             Texture2D maple = new Texture2D(128, 128);  //loading these images outside the main loop to avoid slowdowns
             string maplePath;
@@ -170,19 +210,18 @@ namespace CanadianLeopards
             {
                 GameObject vehicle_go = vehicle.gameObject;
                 if (vehicle_go == null) { continue; }
-                if (vehicle_go.GetComponent<AlreadyConverted>() != null) { continue; }
+                if (vehicle_go.GetComponent<CanLepConverted>() != null) { continue; }
                 string short_name = vehicle_go.name.Substring(0, 3);
                 if (short_name != "LEO") { continue; }
-                vehicle_go.AddComponent<AlreadyConverted>();
+                vehicle_go.AddComponent<CanLepConverted>();
                 if (!mute_logger.Value) { MelonLogger.Msg("Found vic named: " + vehicle_go.name); }
                 vehicle._friendlyName = "Leopard C1";  //New display name
                 bool leo1a3 = false;
                 short_name = vehicle_go.name.Substring(0, 6);
                 if (short_name == "LEO1A3") { leo1a3 = true; }
-
-                american_crew_voice = abrams.GetComponentInChildren<CrewVoiceHandler>().gameObject;        //Adding US Voices
-                vehicle.transform.Find("DE Tank Voice").gameObject.SetActive(false);
-                GameObject new_voice = GameObject.Instantiate(american_crew_voice, vehicle.transform);
+                       
+                vehicle.transform.Find("DE Tank Voice").gameObject.SetActive(false); //Adding US Voices
+                GameObject new_voice = GameObject.Instantiate(american_crew_voice, vehicle.transform);                
                 new_voice.transform.localPosition = new Vector3(0, 0, 0);
                 new_voice.transform.localEulerAngles = new Vector3(0, 0, 0);
                 CrewVoiceHandler handler = new_voice.GetComponent<CrewVoiceHandler>();
@@ -295,7 +334,8 @@ namespace CanadianLeopards
                 sabca_cam.AllowFreeZoom = true;
                 sabca_cam.ZoomInAudioEvent = "event:/Effects/Optic/Optic_Zoom_In";
                 sabca_cam.ZoomOutAudioEvent = "event:/Effects/Optic/Optic_Zoom_Out";
-                GameObject old_scale = vehicle.transform.Find("LEO1A1A1_rig/HULL/TURRET/--Turret Scripts--/Sights/GPS/Leopard 1 GPS canvas/distance scale").gameObject;
+                GameObject old_scale = vehicle.transform.Find("LEO1A1A1_rig/HULL/TURRET/--Turret Scripts--/" +
+                    "Sights/GPS/Leopard 1 GPS canvas/distance scale").gameObject;
                 old_scale.SetActive(false);
 
                 maingun.WeaponData.FriendlyName = "105mm Gun L7A4 L/52";
@@ -306,8 +346,7 @@ namespace CanadianLeopards
                 coax_ammo._totalCycleTime = 0.08f;
                 coax.Weapon.WeaponSound.LoopEventPath = "event:/Weapons/MG_m240_750rmp";                
 
-                //Replacing loader-hatch MG               
-                GameObject m240_prefab = abrams.transform.Find("IPM1_rig/HULL/TURRET/Turret Scripts/M240_loader").gameObject;
+                //Replacing loader-hatch MG
                 Transform loader_station;
                 if (leo1a3) { loader_station = vehicle.transform.Find("LEO1A1A1_rig/HULL/TURRET/lafette002"); }
                 else { loader_station = vehicle.transform.Find("LEO1A1A1_rig/HULL/TURRET/lafette001"); }                
@@ -421,57 +460,35 @@ namespace CanadianLeopards
                 GameObject turret = vehicle.transform.Find("LEO1A1A1_rig/HULL/TURRET").gameObject;
                 GameObject maple_left = new GameObject("Mapleleaf_left");
                 maple_left.transform.parent = turret.transform;
-                maple_left.AddComponent<MeshFilter>();
-                maple_left.AddComponent<MeshRenderer>();
-                maple_left.GetComponent<MeshFilter>().mesh = new Mesh();
-                maple_left.GetComponent<MeshFilter>().mesh.vertices = new Vector3[] {
-                        new Vector3(0.165f, 0 , 0.165f), new Vector3(0.165f, 0, -0.165f),
-                        new Vector3(-0.165f, 0, 0.165f), new Vector3(-0.165f, 0, -0.165f) };
-                maple_left.GetComponent<MeshFilter>().mesh.uv = new Vector2[] {
-                        new Vector2(1, 1), new Vector2(1, 0), new Vector2(0, 1), new Vector2(0, 0) };
-                maple_left.GetComponent<MeshFilter>().mesh.triangles = new int[] { 0, 1, 2, 2, 1, 3 };
-                maple_left.GetComponent<MeshRenderer>().material = cross_mat;
-                maple_left.GetComponent<MeshRenderer>().material.mainTexture = maple;
                 maple_left.transform.position = turret.transform.position;
+                NewQuad(maple_left, cross_mat, maple);
+                maple_left.transform.localScale = new Vector3(0.165f, 0.165f, 0.165f);
                 if (leo1a3)
                 {
                     maple_left.transform.localPosition += new Vector3(-1.15f, 0.628f, 0.08f);
-                    maple_left.transform.rotation = turret.transform.rotation * Quaternion.Euler(new Vector3(3f, 0f, 63f));
-                    maple_left.transform.localScale = new Vector3(1.1f, 1.1f, 1.1f);
+                    maple_left.transform.rotation = turret.transform.rotation * Quaternion.Euler(new Vector3(3f, 0f, 63f));                    
                 }
                 else
                 {
                     maple_left.transform.localPosition += new Vector3(-1.135f, 0.6f, -0.15f);
                     maple_left.transform.rotation = turret.transform.rotation * Quaternion.Euler(new Vector3(0f, 10f, 60f));                    
-                }
-                maple_left.GetComponent<MeshFilter>().mesh.RecalculateNormals();
+                }                
 
                 GameObject maple_right = new GameObject("Mapleleaf_right");
                 maple_right.transform.parent = turret.transform;
-                maple_right.AddComponent<MeshFilter>();
-                maple_right.AddComponent<MeshRenderer>();
-                maple_right.GetComponent<MeshFilter>().mesh = new Mesh();
-                maple_right.GetComponent<MeshFilter>().mesh.vertices = new Vector3[] {
-                        new Vector3(0.165f, 0 , 0.165f), new Vector3(0.165f, 0, -0.165f),
-                        new Vector3(-0.165f, 0, 0.165f), new Vector3(-0.165f, 0, -0.165f) };
-                maple_right.GetComponent<MeshFilter>().mesh.uv = new Vector2[] {
-                        new Vector2(1, 1), new Vector2(1, 0), new Vector2(0, 1), new Vector2(0, 0) };
-                maple_right.GetComponent<MeshFilter>().mesh.triangles = new int[] { 0, 1, 2, 2, 1, 3 };
-                maple_right.GetComponent<MeshRenderer>().material = cross_mat;
-                maple_right.GetComponent<MeshRenderer>().material.mainTexture = maple;
                 maple_right.transform.position = turret.transform.position;
+                NewQuad(maple_right, cross_mat, maple);
+                maple_right.transform.localScale = new Vector3(0.165f, 0.165f, 0.165f);
                 if (leo1a3) 
                 {
                     maple_right.transform.localPosition += new Vector3(1.15f, 0.628f, 0.1f);
-                    maple_right.transform.rotation = turret.transform.rotation * Quaternion.Euler(new Vector3(0f, 180f, 62f));
-                    maple_right.transform.localScale = new Vector3(1.1f, 1.1f, 1.1f);
+                    maple_right.transform.rotation = turret.transform.rotation * Quaternion.Euler(new Vector3(0f, 180f, 62f));                    
                 }
                 else 
                 { 
                     maple_right.transform.localPosition += new Vector3(1.135f, 0.6f, -0.15f);
                     maple_right.transform.rotation = turret.transform.rotation * Quaternion.Euler(new Vector3(0f, 170f, 60f));
-                }
-                maple_right.GetComponent<MeshFilter>().mesh.RecalculateNormals();                
+                }                                
 
                 //Turret numbers: Company [1-4], Troop [1-4], Vic [blank, A B C]
                 PlatoonData platoon = vehicle.Platoon;
@@ -581,31 +598,20 @@ namespace CanadianLeopards
                     //NATO map symbol type decal, front and back
                     GameObject hull_tac_front = new GameObject("tactical sign front"); 
                     hull_tac_front.transform.parent = active_hull.transform;
-                    hull_tac_front.AddComponent<MeshFilter>();
-                    hull_tac_front.AddComponent<MeshRenderer>();
-                    hull_tac_front.GetComponent<MeshRenderer>().material = numbers.material;
-                    hull_tac_front.GetComponent<MeshRenderer>().material.mainTexture = tac;
-                    hull_tac_front.GetComponent<MeshFilter>().mesh = new Mesh();
-                    hull_tac_front.GetComponent<MeshFilter>().mesh.vertices = new Vector3[] {
-                            new Vector3(0.165f, 0 , 0.165f), new Vector3(0.165f, 0, -0.165f),
-                            new Vector3(-0.165f, 0, 0.165f), new Vector3(-0.165f, 0, -0.165f) };
-                    hull_tac_front.GetComponent<MeshFilter>().mesh.uv = new Vector2[] {
-                            new Vector2(1, 1), new Vector2(1, 0), new Vector2(0, 1), new Vector2(0, 0) };
-                    hull_tac_front.GetComponent<MeshFilter>().mesh.triangles = new int[] { 0, 1, 2, 2, 1, 3 }; ;
                     hull_tac_front.transform.position = active_hull.transform.position;
+                    NewQuad(hull_tac_front, numbers.material, tac);
                     if (leo1a3)
                     {
                         hull_tac_front.transform.localPosition += new Vector3(-0.75f, -1.15f, 1.2f);
                         hull_tac_front.transform.localRotation = Quaternion.Euler(new Vector3(310f, 0f, 180f));
-                        hull_tac_front.transform.localScale = new Vector3(0.6f, 0.6f, 0.4f);
+                        hull_tac_front.transform.localScale = new Vector3(0.1f, 0.1f, 0.066f);
                     }
                     else
                     {
                         hull_tac_front.transform.localPosition += new Vector3(-1.45f, 2.4f, 2.25f);
                         hull_tac_front.transform.localRotation = Quaternion.Euler(new Vector3(330f, 180f, 0f));
-                        hull_tac_front.transform.localScale = new Vector3(1.3f, 1.1f, 1.1f);
-                    }
-                    hull_tac_front.GetComponent<MeshFilter>().mesh.RecalculateNormals();
+                        hull_tac_front.transform.localScale = new Vector3(0.25f, 0.25f, 0.18f);
+                    }                    
 
                     GameObject hull_tac_rear = new GameObject("tactical sign rear");
                     hull_tac_rear.transform.parent = active_hull.transform;
@@ -618,13 +624,13 @@ namespace CanadianLeopards
                     {
                         hull_tac_rear.transform.localPosition += new Vector3(-0.88f, 5.418f, 1.4f);
                         hull_tac_rear.transform.localRotation = Quaternion.Euler(new Vector3(348f, 0f, 0f));
-                        hull_tac_rear.transform.localScale = new Vector3(0.6f, 0.4f, 0.4f);
+                        hull_tac_rear.transform.localScale = new Vector3(0.1f, 0.1f, 0.066f);
                     }
                     else
                     {
                         hull_tac_rear.transform.localPosition += new Vector3(-1.78f, 2.8f, -10.85f);
                         hull_tac_rear.transform.localRotation = Quaternion.Euler(new Vector3(-100f, 0f, 0f));
-                        hull_tac_rear.transform.localScale = new Vector3(1f, 1f, 0.8f);
+                        hull_tac_rear.transform.localScale = new Vector3(0.2f, 0.2f, 0.14f);
                     }
 
                     GameObject mlc_decal = new GameObject("MLC decal");
@@ -639,18 +645,22 @@ namespace CanadianLeopards
                     {
                         mlc_decal.transform.localPosition += new Vector3(0.84f, -0.62f, 1.48f);
                         mlc_decal.transform.localRotation = Quaternion.Euler(new Vector3(306f, 0f, 180f));
-                        mlc_decal.transform.localScale = new Vector3(0.6f, 0.6f, 0.6f);
+                        mlc_decal.transform.localScale = new Vector3(0.1f, 0.1f, 0.1f);
                     }
                     else
                     {
                         mlc_decal.transform.localPosition += new Vector3(1.6f, 3f, 1.15f);
                         mlc_decal.transform.localRotation = Quaternion.Euler(new Vector3(330f, 180f, 0f));
-                        mlc_decal.transform.localScale = new Vector3(1.2f, 1.2f, 1.2f);
-                    }
-                    mlc_decal.GetComponent<MeshFilter>().mesh.RecalculateNormals();
+                        mlc_decal.transform.localScale = new Vector3(0.2f, 0.2f, 0.2f);
+                    }                    
                 }
 
                 if (!mute_logger.Value) { MelonLogger.Msg("Conversions complete on " + vehicle_go.name); }
+            }
+
+            if (grafen) {
+                Unit newVic = Object.FindAnyObjectByType<Unit>();
+                gameManager.GetComponent<PlayerInput>().SetPlayerUnit(newVic);
             }
             activeScene = false;
             yield break;            
