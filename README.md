@@ -32,5 +32,6 @@ This mod does not copy or incorporate any material wholesale from other modders 
 1.0 - Base release  
 1.1 - Hotfix   
 1.2 - Added tactical symbols and MLC number  
-
+1.3 - C1s based on the Leopard 1A3 added to the Grafenwöhr showcase  
 ![New decals per version 1.2](https://i.imgur.com/pXAMOAA.jpeg)
+
