@@ -14,7 +14,7 @@ As per version 1.2, German-style tactical symbols may be worn, as they appear in
 This mod requires MelonLoader and is intended to be used with Version 0.6.1!
 This mod does NOT require the Vehicle Preloader or Texture Loader.
 
-To install, simply extract the "CanadianLeopards.dll" file and the "CanadianLeopards" folder into the /mods/ folder. If done correctly, there should only be PNGs in the /mods/CanadianLeopards/ directory and the DLL file is separate.
+To install, simply extract the "CanadianLeopards.dll" file and the "CanadianLeopards" folder into the /mods/ folder. If done correctly, there should only be PNGs in the /mods/CanadianLeopards/ directory and the DLL file is separate. If upgrading from 1.2 to 1.3, you only need to update the DLL.
 
 ***Acknowledgements***  
 Programming: Bluehawk  
